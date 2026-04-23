@@ -72,7 +72,8 @@ type SunPatchResult = {
   segmented: boolean;
 };
 
-const BACKEND_URL = "http://127.0.0.1:8000/analyze";
+const API_BASE = process.env.NEXT_PUBLIC_API_BASE_URL;
+
 
 function degToRad(deg: number) {
   return (deg * Math.PI) / 180;
@@ -842,9 +843,7 @@ export default function Page() {
   const [windowOffset, setWindowOffset] = useState(6);
 
   const [latitude, setLatitude] = useState(47.6);
-  const [orientation, setOrientation] = useState<
-    "North" | "South" | "East" | "West"
-  >("South");
+
   const [analysisDate, setAnalysisDate] = useState<"03-21" | "06-21" | "12-21">(
     "06-21"
   );
@@ -963,7 +962,7 @@ export default function Page() {
         verticalSpacing,
       };
 
-      const res = await fetch(BACKEND_URL, {
+      const res = await fetch(`${API_BASE}/analyze`, {
         method: "POST",
         headers: {
           "Content-Type": "application/json",
@@ -1182,13 +1181,19 @@ export default function Page() {
   const sy = sun.x * inward.x + sun.y * inward.y;
   const sz = sun.z;
 
-  const rayDir = {
-    x: -sx,
-    y: -sy,
-    z: -sz,
+  const rayDirIntoRoom = {
+  x: -sx,
+  y: -sy,
+  z: -sz,
   };
 
-  if (rayDir.y <= 0 || rayDir.z >= 0) return null;
+  const rayToSun = {
+    x: sx,
+    y: sy,
+    z: sz,
+  };
+
+  if (rayDirIntoRoom.y <= 0 || rayDirIntoRoom.z >= 0) return null;
 
   const windowLeft = clamp(windowOffset, 0, Math.max(0, roomWidth - windowWidth));
   const windowRight = windowLeft + windowWidth;
@@ -1209,10 +1214,16 @@ export default function Page() {
       let blocked = false;
 
       if (useShading && hasShading) {
+        const originOutside = {
+          x: origin.x,
+          y: -1e-4,
+          z: origin.z,
+        };
+
         if (shadingType === "horizontal" || shadingType === "eggcrate") {
           blocked = rayHitsHorizontalShade(
-            origin,
-            rayDir,
+            originOutside,
+            rayToSun,
             windowLeft,
             windowRight,
             sillHeight,
@@ -1226,8 +1237,8 @@ export default function Page() {
 
         if (!blocked && (shadingType === "vertical" || shadingType === "eggcrate")) {
           blocked = rayHitsVerticalShade(
-            origin,
-            rayDir,
+            originOutside,
+            rayToSun,
             windowLeft,
             windowRight,
             sillHeight,
@@ -1242,11 +1253,11 @@ export default function Page() {
 
       if (blocked) continue;
 
-      const t = (0 - origin.z) / rayDir.z;
+      const t = (0 - origin.z) / rayDirIntoRoom.z;
       if (t <= 0) continue;
 
-      const hitX = origin.x + rayDir.x * t;
-      const hitY = origin.y + rayDir.y * t;
+      const hitX = origin.x + rayDirIntoRoom.x * t;
+      const hitY = origin.y + rayDirIntoRoom.y * t;
 
       if (hitY < 0 || hitY > roomDepth) continue;
       if (hitX < 0 || hitX > roomWidth) continue;
