@@ -41,7 +41,7 @@ type SavedScenario = {
     sillHeight: number;
     windowOffset: number;
     latitude: number;
-    orientation: "North" | "South" | "East" | "West";
+    orientationDeg: number;
     analysisDate: "03-21" | "06-21" | "12-21";
     timeMode: "full_day" | "9" | "12" | "15";
     hasShading: boolean;
@@ -142,14 +142,7 @@ function solarPositionSimple(
   };
 }
 
-function orientationToAzimuth(
-  orientation: "North" | "South" | "East" | "West"
-) {
-  if (orientation === "North") return 0;
-  if (orientation === "East") return 90;
-  if (orientation === "South") return 180;
-  return 270;
-}
+
 
 function sunVectorWorld(altitudeDeg: number, azimuthDeg: number) {
   const sunAlt = degToRad(altitudeDeg);
@@ -987,27 +980,28 @@ export default function Page() {
   }
 
   function orientPlanPoint(
-  x: number,
-  y: number,
-  roomWidth: number,
-  roomDepth: number,
-  orientation: "North" | "South" | "East" | "West"
-) {
-  if (orientation === "South") {
-    return { x, y };
-  }
+    x: number,
+    y: number,
+    roomWidth: number,
+    roomDepth: number,
+    orientationDeg: number
+  ) {
+    const d = ((orientationDeg % 360) + 360) % 360;
 
-  if (orientation === "North") {
-    return { x: roomWidth - x, y: roomDepth - y };
-  }
+    if (d >= 135 && d < 225) {
+      return { x, y }; // South
+    }
 
-  if (orientation === "East") {
-    return { x: roomWidth - y, y: x };
-  }
+    if (d >= 315 || d < 45) {
+      return { x: roomWidth - x, y: roomDepth - y }; // North
+    }
 
-  // West
-  return { x: y, y: roomDepth - x };
-}
+    if (d >= 45 && d < 135) {
+      return { x: roomWidth - y, y: x }; // East
+    }
+
+    return { x: y, y: roomDepth - x }; // West
+  }
 
   function buildScenarioName() {
     if (scenarioName.trim()) return scenarioName.trim();
@@ -1032,7 +1026,7 @@ export default function Page() {
         sillHeight,
         windowOffset,
         latitude,
-        orientation,
+        orientationDeg,
         analysisDate,
         timeMode,
         hasShading,
@@ -1490,6 +1484,7 @@ export default function Page() {
     horizontalSpacing,
     verticalSpacing,
   ]);
+  
   const topPreview = useMemo(() => {
     const w = 320;
     const h = 240;
@@ -1514,13 +1509,13 @@ export default function Page() {
     const windowRightVal = windowLeftVal + windowWidth;
     const windowCenter = windowLeftVal + windowWidth / 2;
 
-    const winLeft = sx(windowLeftVal);
-    const winRight = sx(windowRightVal);
-
     const shapes: React.ReactNode[] = [];
 
+    const dir = ((orientationDeg % 360) + 360) % 360;
+
     function topFacadeLine(u0: number, u1: number) {
-      if (orientation === "South") {
+      if (dir >= 135 && dir < 225) {
+        // South
         return {
           x1: sx(u0),
           y1: roomTop,
@@ -1528,7 +1523,9 @@ export default function Page() {
           y2: roomTop,
         };
       }
-      if (orientation === "North") {
+
+      if (dir >= 315 || dir < 45) {
+        // North
         return {
           x1: sx(roomWidth - u0),
           y1: roomBottom,
@@ -1536,7 +1533,9 @@ export default function Page() {
           y2: roomBottom,
         };
       }
-      if (orientation === "East") {
+
+      if (dir >= 45 && dir < 135) {
+        // East
         return {
           x1: roomRight,
           y1: sy(u0),
@@ -1544,6 +1543,8 @@ export default function Page() {
           y2: sy(u1),
         };
       }
+
+      // West
       return {
         x1: roomLeft,
         y1: sy(roomDepth - u0),
@@ -1553,41 +1554,44 @@ export default function Page() {
     }
 
     if (hasShading && (shadingType === "horizontal" || shadingType === "eggcrate")) {
-      const d = Math.max(8, horizontalDepth * scale);
+      const depthPx = Math.max(8, horizontalDepth * scale);
 
-      if (orientation === "South") {
+      if (dir >= 135 && dir < 225) {
+        // South
         shapes.push(
           <rect
             key="h-top"
-            x={winLeft}
-            y={roomTop - d}
-            width={winRight - winLeft}
-            height={d}
+            x={sx(windowLeftVal)}
+            y={roomTop - depthPx}
+            width={sx(windowRightVal) - sx(windowLeftVal)}
+            height={depthPx}
             fill="none"
             stroke="black"
             strokeWidth="1.2"
           />
         );
-      } else if (orientation === "North") {
+      } else if (dir >= 315 || dir < 45) {
+        // North
         shapes.push(
           <rect
             key="h-top"
             x={sx(roomWidth - windowRightVal)}
             y={roomBottom}
-            width={winRight - winLeft}
-            height={d}
+            width={sx(windowRightVal) - sx(windowLeftVal)}
+            height={depthPx}
             fill="none"
             stroke="black"
             strokeWidth="1.2"
           />
         );
-      } else if (orientation === "East") {
+      } else if (dir >= 45 && dir < 135) {
+        // East
         shapes.push(
           <rect
             key="h-top"
             x={roomRight}
             y={sy(windowLeftVal)}
-            width={d}
+            width={depthPx}
             height={sy(windowRightVal) - sy(windowLeftVal)}
             fill="none"
             stroke="black"
@@ -1595,12 +1599,13 @@ export default function Page() {
           />
         );
       } else {
+        // West
         shapes.push(
           <rect
             key="h-top"
-            x={roomLeft - d}
+            x={roomLeft - depthPx}
             y={sy(roomDepth - windowRightVal)}
-            width={d}
+            width={depthPx}
             height={sy(roomDepth - windowLeftVal) - sy(roomDepth - windowRightVal)}
             fill="none"
             stroke="black"
@@ -1611,46 +1616,49 @@ export default function Page() {
     }
 
     if (hasShading && (shadingType === "vertical" || shadingType === "eggcrate")) {
-      const d = Math.max(8, verticalDepth * scale);
+      const depthPx = Math.max(8, verticalDepth * scale);
       const thick = Math.max(2, shadingThickness * scale);
 
       for (let i = 0; i < verticalCount; i++) {
         const x0 = windowLeftVal + i * verticalSpacing;
         if (x0 > windowRightVal) break;
 
-        if (orientation === "South") {
+        if (dir >= 135 && dir < 225) {
+          // South
           shapes.push(
             <rect
               key={`vt-${i}`}
               x={sx(x0)}
-              y={roomTop - d}
+              y={roomTop - depthPx}
               width={thick}
-              height={d}
+              height={depthPx}
               fill="none"
               stroke="black"
               strokeWidth="1.2"
             />
           );
-        } else if (orientation === "North") {
+        } else if (dir >= 315 || dir < 45) {
+          // North
           shapes.push(
             <rect
               key={`vt-${i}`}
               x={sx(roomWidth - x0) - thick}
               y={roomBottom}
               width={thick}
-              height={d}
+              height={depthPx}
               fill="none"
               stroke="black"
               strokeWidth="1.2"
             />
           );
-        } else if (orientation === "East") {
+        } else if (dir >= 45 && dir < 135) {
+          // East
           shapes.push(
             <rect
               key={`vt-${i}`}
               x={roomRight}
               y={sy(x0)}
-              width={d}
+              width={depthPx}
               height={thick}
               fill="none"
               stroke="black"
@@ -1658,12 +1666,13 @@ export default function Page() {
             />
           );
         } else {
+          // West
           shapes.push(
             <rect
               key={`vt-${i}`}
-              x={roomLeft - d}
+              x={roomLeft - depthPx}
               y={sy(roomDepth - x0) - thick}
-              width={d}
+              width={depthPx}
               height={thick}
               fill="none"
               stroke="black"
@@ -1792,7 +1801,7 @@ export default function Page() {
       }
     }
 
-   const windowLine = topFacadeLine(windowLeftVal, windowRightVal);
+    const windowLine = topFacadeLine(windowLeftVal, windowRightVal);
 
     return (
       <svg viewBox={`0 0 ${w} ${h}`} className="w-full h-auto">
@@ -1830,7 +1839,7 @@ export default function Page() {
         )}
       </svg>
     );
-   }, [
+  }, [
     roomWidth,
     roomDepth,
     windowWidth,
@@ -1839,14 +1848,16 @@ export default function Page() {
     shadingType,
     horizontalDepth,
     verticalDepth,
+    horizontalCount,
     verticalCount,
+    horizontalSpacing,
     verticalSpacing,
     shadingThickness,
     displayHour,
     maxPenetrationInfo,
     daylightHours,
     timeMode,
-    orientation,
+    orientationDeg,
   ]);
 
   const box3DPreview = useMemo(() => {
@@ -1901,20 +1912,26 @@ export default function Page() {
 
     // Rotate facade geometry itself to the correct wall
     function facadePoint(u: number, outwardDepth: number, z: number) {
-      // outwardDepth: 0 = facade plane, positive = outside the room
-      if (orientation === "South") {
+      const dir = ((orientationDeg % 360) + 360) % 360;
+
+      if (dir >= 135 && dir < 225) {
+        // South
         return project(u, 0 - outwardDepth, z);
       }
-      if (orientation === "North") {
+
+      if (dir >= 315 || dir < 45) {
+        // North
         return project(roomX - u, roomY + outwardDepth, z);
       }
-      if (orientation === "East") {
+
+      if (dir >= 45 && dir < 135) {
+        // East
         return project(roomX + outwardDepth, u, z);
       }
+
       // West
       return project(0 - outwardDepth, roomY - u, z);
     }
-
     function worldToPreviewSun(
       altitudeDegLocal: number,
       azimuthDegLocal: number,
@@ -2327,7 +2344,7 @@ export default function Page() {
   displayHour,
   timeMode,
   daylightHours,
-  orientation,
+  orientationDeg,
 ]);
   
 
@@ -2863,7 +2880,7 @@ export default function Page() {
                               <div>
                                 <div className="text-slate-500">Orientation</div>
                                 <div className="font-medium">
-                                  {scenario.inputs.orientation}
+                                  {Math.round(scenario.inputs.orientationDeg)}°
                                 </div>
                               </div>
                               <div>
@@ -3056,7 +3073,7 @@ export default function Page() {
                                     : "none"}
                                 </td>
                                 <td className="px-4 py-3">
-                                  {scenario.inputs.orientation}
+                                  {Math.round(scenario.inputs.orientationDeg)}°
                                 </td>
                                 <td className="px-4 py-3">
                                   {scenario.inputs.analysisDate}

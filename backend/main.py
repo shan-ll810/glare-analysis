@@ -20,8 +20,6 @@ from honeybee.shade import Shade
 from ladybug_geometry.geometry3d.pointvector import Point3D
 from ladybug_geometry.geometry3d.face import Face3D
 
-app = Flask(__name__)
-CORS(app)
 
 
 # =============================
@@ -40,14 +38,7 @@ def resolve_date(analysis_date: str):
     return mapping.get(analysis_date, (6, 21))
 
 
-def orientation_to_azimuth(orientation: str):
-    mapping = {
-        "North": 0.0,
-        "East": 90.0,
-        "South": 180.0,
-        "West": 270.0,
-    }
-    return mapping.get(orientation, 180.0)
+
 
 
 def day_of_year(month: int, day: int) -> int:
