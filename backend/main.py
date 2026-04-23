@@ -552,11 +552,10 @@ def analyze_single_time(data, hour_local, shading_faces):
         data.get("windowOffset", max(0.0, (room_width - window_width) / 2.0))
     )
     latitude = float(data.get("latitude", 47.61))
-    orientation = data.get("orientation", "South")
     analysis_date = data.get("analysisDate", "06-21")
 
     month, day = resolve_date(analysis_date)
-    facade_azimuth = orientation_to_azimuth(orientation)
+    facade_azimuth = float(data.get("orientationDeg", 180.0))
 
     window_left = max(0.0, min(window_offset, room_width - window_width))
     window_right = window_left + window_width
