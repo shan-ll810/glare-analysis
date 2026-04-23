@@ -1,5 +1,15 @@
 from flask import Flask, request, jsonify
 from flask_cors import CORS
+
+app = Flask(__name__)
+
+CORS(
+    app,
+    resources={r"/*": {"origins": "*"}},
+    supports_credentials=False,
+    methods=["GET", "POST", "OPTIONS"],
+    allow_headers=["Content-Type", "Authorization"]
+)
 import math
 
 # Honeybee Core
@@ -628,8 +638,11 @@ def analyze_single_time(data, hour_local, shading_faces):
 # =============================
 # routes
 # =============================
-@app.route("/analyze", methods=["POST"])
+@app.route("/analyze", methods=["POST", "OPTIONS"])
 def analyze():
+    if request.method == "OPTIONS":
+        return "", 200
+
     try:
         data = request.get_json(force=True)
 
