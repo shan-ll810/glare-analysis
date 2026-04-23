@@ -1,4 +1,6 @@
 flask
-gunicorn
 flask-cors
+gunicorn
+honeybee-core
+ladybug-geometry
 numpy
