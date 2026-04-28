@@ -456,15 +456,18 @@ def get_time_samples(time_mode: str):
     return [8.0, 9.0, 10.0, 11.0, 12.0, 13.0, 14.0, 15.0, 16.0]
 
 
-def floor_grid(room_width, room_depth, grid_size=0.25):
+def analysis_grid(room_width, room_depth, analysis_height=0.0, grid_size=0.25):
     points = []
+    z = max(0.0, float(analysis_height))
+
     x = grid_size / 2.0
     while x < room_width:
         y = grid_size / 2.0
         while y < room_depth:
-            points.append((x, y, 0.01))
+            points.append((x, y, z))
             y += grid_size
         x += grid_size
+
     return points
 
 
@@ -536,6 +539,11 @@ def point_sees_sun_through_window(
 def analyze_single_time(data, hour_local, shading_faces):
     room_width = float(data.get("roomWidth", 20.0))
     room_depth = float(data.get("roomDepth", 20.0))
+    room_height = float(data.get("roomHeight", 10.0))
+
+    analysis_height = float(data.get("analysisHeight", 0.0))
+    analysis_height = clamp(analysis_height, 0.0, room_height)
+
     window_width = float(data.get("windowWidth", 8.0))
     window_height = float(data.get("windowHeight", 6.0))
     sill_height = float(data.get("sillHeight", 3.0))
@@ -582,7 +590,7 @@ def analyze_single_time(data, hour_local, shading_faces):
         }
 
     grid_size = float(data.get("gridSize", 0.25))
-    points = floor_grid(room_width, room_depth, grid_size)
+    points = analysis_grid(room_width, room_depth, analysis_height, grid_size)
     cell_area = grid_size * grid_size
 
     lit_points = []
@@ -602,8 +610,8 @@ def analyze_single_time(data, hour_local, shading_faces):
             lit_points.append(p)
 
     sunlit_area = len(lit_points) * cell_area
-    total_floor_area = room_width * room_depth
-    coverage_ratio = sunlit_area / total_floor_area if total_floor_area > 0 else 0.0
+    total_analysis_area = room_width * room_depth
+    coverage_ratio = sunlit_area / total_analysis_area if total_analysis_area > 0 else 0.0
 
     max_penetration = effective_max_penetration_from_lit_points(
         lit_points=lit_points,
@@ -639,6 +647,7 @@ def analyze():
         room_width = float(data.get("roomWidth", 20.0))
         room_depth = float(data.get("roomDepth", 20.0))
         room_height = float(data.get("roomHeight", 10.0))
+        analysis_height = float(data.get("analysisHeight", 0.0))
         window_width = float(data.get("windowWidth", 8.0))
         window_height = float(data.get("windowHeight", 6.0))
         sill_height = float(data.get("sillHeight", 3.0))
@@ -648,6 +657,9 @@ def analyze():
 
         if room_width <= 0 or room_depth <= 0 or room_height <= 0:
             return jsonify({"ok": False, "error": "Room dimensions must be positive."}), 400
+        
+        if analysis_height < 0 or analysis_height > room_height:
+            return jsonify({"ok": False, "error": "Analysis height must be between 0 and room height."}), 400
 
         if window_width <= 0 or window_height <= 0:
             return jsonify({"ok": False, "error": "Window dimensions must be positive."}), 400
@@ -695,6 +707,7 @@ def analyze():
             },
             "times": results,
             "debug": {
+                "analysis_height": analysis_height,
                 "shading_count_generated": len(shading_faces),
                 "hb_shade_count": hb_debug["hb_shade_count"],
                 "hb_room_identifier": hb_debug["hb_room_identifier"],

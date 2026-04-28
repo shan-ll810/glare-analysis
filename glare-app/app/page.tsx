@@ -36,6 +36,7 @@ type SavedScenario = {
     roomWidth: number;
     roomDepth: number;
     roomHeight: number;
+    analysisHeight: number;
     windowWidth: number;
     windowHeight: number;
     sillHeight: number;
@@ -830,6 +831,8 @@ export default function Page() {
   const [roomDepth, setRoomDepth] = useState(20);
   const [roomHeight, setRoomHeight] = useState(10);
 
+  const [analysisHeight, setAnalysisHeight] = useState(2.5);
+
   const [windowWidth, setWindowWidth] = useState(8);
   const [windowHeight, setWindowHeight] = useState(6);
   const [sillHeight, setSillHeight] = useState(3);
@@ -936,6 +939,7 @@ export default function Page() {
         roomWidth,
         roomDepth,
         roomHeight,
+        analysisHeight,
         windowWidth,
         windowHeight,
         sillHeight,
@@ -1021,6 +1025,7 @@ export default function Page() {
         roomWidth,
         roomDepth,
         roomHeight,
+        analysisHeight,
         windowWidth,
         windowHeight,
         sillHeight,
@@ -1247,7 +1252,11 @@ export default function Page() {
 
       if (blocked) continue;
 
-      const t = (0 - origin.z) / rayDirIntoRoom.z;
+      const planeZ = clamp(analysisHeight, 0, roomHeight);
+
+      if (origin.z < planeZ) continue;
+
+      const t = (planeZ - origin.z) / rayDirIntoRoom.z;
       if (t <= 0) continue;
 
       const hitX = origin.x + rayDirIntoRoom.x * t;
@@ -1349,6 +1358,7 @@ export default function Page() {
     roomWidth,
     roomDepth,
     roomHeight,
+    analysisHeight,
     windowWidth,
     windowHeight,
     sillHeight,
@@ -1842,6 +1852,7 @@ export default function Page() {
   }, [
     roomWidth,
     roomDepth,
+    analysisHeight,
     windowWidth,
     windowOffset,
     hasShading,
@@ -2033,10 +2044,54 @@ export default function Page() {
         ? null
         : computeSunPatchAtHour(displayHour, hasShading);
 
+    const analysisZ = clamp(analysisHeight, 0, roomHeight) * zoom * roomScaleZ;
+
+    const gridLines3D: React.ReactNode[] = [];
+    const gridStep = 2;
+
+    for (let x = 0; x <= roomWidth; x += gridStep) {
+      const p1 = project(x * zoom, 0, analysisZ);
+      const p2 = project(x * zoom, roomY, analysisZ);
+      gridLines3D.push(
+        <line
+          key={`grid-x-${x}`}
+          x1={p1.x}
+          y1={p1.y}
+          x2={p2.x}
+          y2={p2.y}
+          stroke="#94a3b8"
+          strokeWidth="0.6"
+          opacity="0.45"
+        />
+      );
+    }
+
+    for (let y = 0; y <= roomDepth; y += gridStep) {
+      const p1 = project(0, y * zoom * roomScaleY, analysisZ);
+      const p2 = project(roomX, y * zoom * roomScaleY, analysisZ);
+      gridLines3D.push(
+        <line
+          key={`grid-y-${y}`}
+          x1={p1.x}
+          y1={p1.y}
+          x2={p2.x}
+          y2={p2.y}
+          stroke="#94a3b8"
+          strokeWidth="0.6"
+          opacity="0.45"
+        />
+      );
+    }
+
+    const planeA = project(0, 0, analysisZ);
+    const planeB = project(roomX, 0, analysisZ);
+    const planeC = project(roomX, roomY, analysisZ);
+    const planeD = project(0, roomY, analysisZ);
+
     const patchShapes: React.ReactNode[] = [];
     if (patch && patch.hullPoints.length >= 3) {
       const poly3d = patch.hullPoints.map((pt) =>
-        project(pt.x * zoom, pt.y * zoom * roomScaleY, 0)
+        project(pt.x * zoom, pt.y * zoom * roomScaleY, analysisZ)
       );
 
       patchShapes.push(
@@ -2060,7 +2115,7 @@ export default function Page() {
 
         const points = item.patch.hullPoints
           .map((pt) => {
-            const p = project(pt.x * zoom, pt.y * zoom * roomScaleY, 0);
+            const p = project(pt.x * zoom, pt.y * zoom * roomScaleY, analysisZ);
             return `${p.x},${p.y}`;
           })
           .join(" ");
@@ -2224,6 +2279,18 @@ export default function Page() {
           />
         ))}
 
+        <polygon
+          points={pts([planeA, planeB, planeC, planeD])}
+          fill="#e0f2fe"
+          opacity="0.18"
+          stroke="#64748b"
+          strokeWidth="0.8"
+        />
+        {gridLines3D}
+        <text x={planeD.x + 8} y={planeD.y - 6} fontSize="11" fill="#475569">
+          Analysis plane: {analysisHeight.toFixed(1)} ft
+        </text>
+
         {patchShapes}
 
         <polygon
@@ -2323,6 +2390,7 @@ export default function Page() {
   roomWidth,
   roomDepth,
   roomHeight,
+  analysisHeight,
   windowWidth,
   windowHeight,
   sillHeight,
@@ -2376,16 +2444,16 @@ export default function Page() {
 }
 
   return (
-    <main className="min-h-screen bg-slate-50 text-slate-900">
-      <div className="mx-auto max-w-7xl p-6">
+    <main className="h-screen overflow-hidden bg-slate-50 text-slate-900">
+      <div className="mx-auto flex h-screen max-w-[1800px] flex-col p-4">
         <h1 className="text-3xl font-bold tracking-tight">Glare Analysis</h1>
         <p className="mt-2 text-sm text-slate-600">
           Geometric direct sun patch study with configurable shading devices.
         </p>
 
-             <div className="mt-6 grid grid-cols-1 gap-6 lg:grid-cols-[380px_minmax(0,1fr)] items-start">
-              <section className="self-start lg:sticky lg:top-6 lg:h-[calc(100vh-3rem)]">
-                <div className="flex h-full min-h-0 flex-col overflow-hidden rounded-2xl border bg-white shadow-sm">
+            <div className="mt-4 grid min-h-0 flex-1 grid-cols-[340px_minmax(0,1fr)_430px] gap-4">
+              <section className="min-h-0 overflow-y-auto rounded-2xl border border-slate-900 bg-white">
+                <div className="flex min-h-0 flex-col">
                   <div className="border-b px-4 py-3">
                     <h2 className="text-lg font-semibold">Inputs</h2>
                     <p className="mt-1 text-sm text-slate-500">
@@ -2418,6 +2486,29 @@ export default function Page() {
                         min={8}
                       />
                     </div>
+
+                    <label className="mt-4 block">
+                      <div className="mb-1 flex items-center justify-between text-sm text-slate-600">
+                        <span>Analysis Plane Height (ft)</span>
+                        <span className="font-medium text-slate-900">
+                          {analysisHeight.toFixed(1)} ft
+                        </span>
+                      </div>
+
+                      <input
+                        type="range"
+                        min="0"
+                        max={roomHeight}
+                        step="0.1"
+                        value={analysisHeight}
+                        onChange={(e) => setAnalysisHeight(Number(e.target.value))}
+                        className="w-full"
+                      />
+
+                      <div className="mt-1 text-xs text-slate-500">
+                        0 ft = floor level · 2.5 ft = typical desk/task plane
+                      </div>
+                    </label>
 
                     <div className="border-t pt-4">
                       <h3 className="text-base font-semibold">Window</h3>
@@ -2648,7 +2739,7 @@ export default function Page() {
                 </div>
               </section>
 
-              <section className="min-w-0 space-y-6 lg:h-[calc(100vh-3rem)] lg:overflow-y-auto lg:pr-2">
+              <section className="min-h-0 overflow-y-auto rounded-2xl border border-slate-900 bg-white p-4 space-y-6">
                 <div className="flex flex-wrap gap-2">
                   <button
                     onClick={() =>
