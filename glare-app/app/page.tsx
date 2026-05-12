@@ -1,6 +1,9 @@
 "use client";
 
+
+
 import { toPng } from "html-to-image";
+import { supabase } from "@/app/lib/supabase";
 import { useEffect, useMemo, useRef, useState } from "react";
 
 type TimeResult = {
@@ -43,7 +46,7 @@ type SavedScenario = {
     windowOffset: number;
     latitude: number;
     orientationDeg: number;
-    analysisDate: "03-21" | "06-21" | "12-21";
+    analysisDate: "03-21" | "06-21" | "09-21" | "12-21";
     timeMode: "full_day" | "9" | "12" | "15";
     hasShading: boolean;
     shadingType: "horizontal" | "vertical" | "eggcrate";
@@ -57,6 +60,12 @@ type SavedScenario = {
   };
   result: AnalyzeResponse;
 };
+
+type AppUser = {
+  name: string;
+  email: string;
+};
+
 type Pt2 = { x: number; y: number };
 
 type SunPatchResult = {
@@ -91,9 +100,12 @@ function clamp(value: number, min: number, max: number) {
   return Math.max(min, Math.min(max, value));
 }
 
-function resolveDate(date: "03-21" | "06-21" | "12-21") {
+function resolveDate(date: "03-21" | "06-21" | "09-21" | "12-21") {
   if (date === "03-21") return { month: 3, day: 21 };
+  if (date === "06-21") return { month: 6, day: 21 };
+  if (date === "09-21") return { month: 9, day: 21 };
   if (date === "12-21") return { month: 12, day: 21 };
+
   return { month: 6, day: 21 };
 }
 
@@ -541,8 +553,15 @@ function ScenarioLineChart({
       ? "Coverage (%)"
       : "Max Penetration (ft)";
 
+  const [hoveredPoint, setHoveredPoint] = useState<{
+    x: number;
+    y: number;
+    text: string;
+  } | null>(null);
+  
+
   return (
-    <svg viewBox={`0 0 ${w} ${h}`} className="w-full h-auto">
+    <svg viewBox={`0 0 ${w} ${h}`} className="w-full h-full object-contain">
       <rect x="0" y="0" width={w} height={h} fill="white" />
 
       {tickValues.map((v, i) => {
@@ -633,11 +652,26 @@ function ScenarioLineChart({
                 key={`${s.id}-${hour}`}
                 cx={xAt(hour)}
                 cy={yAt(s.values[i])}
-                r="3.5"
+                r="6"
                 fill={color}
                 stroke="white"
                 strokeWidth="1.5"
+                className="cursor-pointer"
+                onMouseEnter={() => {
+                  const valueText =
+                    metric === "coverage_ratio"
+                      ? `${s.values[i].toFixed(1)}%`
+                      : `${s.values[i].toFixed(2)}`;
+
+                  setHoveredPoint({
+                    x: xAt(hour),
+                    y: yAt(s.values[i]),
+                    text: `${s.name} · ${hour}:00 · ${valueText}`,
+                  });
+                }}
+                onMouseLeave={() => setHoveredPoint(null)}
               />
+            
             ))}
           </g>
         );
@@ -681,6 +715,22 @@ function ScenarioLineChart({
           );
         })}
       </g>
+      {hoveredPoint && (
+        <g transform={`translate(${hoveredPoint.x + 10}, ${hoveredPoint.y - 28})`}>
+          <rect
+            x="0"
+            y="0"
+            width="170"
+            height="28"
+            rx="6"
+            fill="white"
+            stroke="#94a3b8"
+          />
+          <text x="10" y="18" fontSize="11" fill="#334155">
+            {hoveredPoint.text}
+          </text>
+        </g>
+      )}
     </svg>
   );
 }
@@ -711,20 +761,22 @@ function OrientationDial({
     };
   }
 
-  function eventToDeg(
-    e: React.MouseEvent<SVGSVGElement> | React.PointerEvent<SVGSVGElement>
-  ) {
-    const rect = e.currentTarget.getBoundingClientRect();
-    const x = e.clientX - rect.left;
-    const y = e.clientY - rect.top;
+ function eventToDeg(
+  e: React.MouseEvent<SVGElement> | React.PointerEvent<SVGElement>
+) {
+  const svg = e.currentTarget.ownerSVGElement ?? e.currentTarget;
+  const rect = svg.getBoundingClientRect();
 
-    const dx = x - cx;
-    const dy = y - cy;
+  const x = e.clientX - rect.left;
+  const y = e.clientY - rect.top;
 
-    const rad = Math.atan2(dy, dx);
-    const deg = (rad * 180) / Math.PI + 90;
-    return normalize360(deg);
-  }
+  const dx = x - cx;
+  const dy = y - cy;
+
+  const rad = Math.atan2(dy, dx);
+  const deg = (rad * 180) / Math.PI + 90;
+  return normalize360(deg);
+}
 
   const p = pointerFromDeg(value);
 
@@ -737,18 +789,9 @@ function OrientationDial({
         </div>
       </div>
 
-      <svg
+      <svg     
         viewBox={`0 0 ${size} ${size}`}
-        className="mx-auto h-44 w-44 cursor-pointer touch-none"
-        onPointerDown={(e) => {
-          e.currentTarget.setPointerCapture(e.pointerId);
-          onChange(eventToDeg(e));
-        }}
-        onPointerMove={(e) => {
-          if (e.buttons === 1) {
-            onChange(eventToDeg(e));
-          }
-        }}
+        className="mx-auto h-44 w-44 touch-none"
       >
         <circle
           cx={cx}
@@ -776,16 +819,59 @@ function OrientationDial({
           strokeWidth="1.5"
         />
 
-        <text x={cx} y={cy - r - 8} textAnchor="middle" fontSize="12">
+        <text
+          x={cx}
+          y={cy - r - 8}
+          textAnchor="middle"
+          fontSize="12"
+          className="cursor-pointer select-none hover:font-bold"
+          onClick={(e) => {
+            e.stopPropagation();
+            onChange(0);
+          }}
+        >
           N
         </text>
-        <text x={cx + r + 10} y={cy + 4} textAnchor="middle" fontSize="12">
+
+        <text
+          x={cx + r + 10}
+          y={cy + 4}
+          textAnchor="middle"
+          fontSize="12"
+          className="cursor-pointer select-none hover:font-bold"
+          onClick={(e) => {
+            e.stopPropagation();
+            onChange(90);
+          }}
+        >
           E
         </text>
-        <text x={cx} y={cy + r + 16} textAnchor="middle" fontSize="12">
+
+        <text
+          x={cx}
+          y={cy + r + 16}
+          textAnchor="middle"
+          fontSize="12"
+          className="cursor-pointer select-none hover:font-bold"
+          onClick={(e) => {
+            e.stopPropagation();
+            onChange(180);
+          }}
+        >
           S
         </text>
-        <text x={cx - r - 10} y={cy + 4} textAnchor="middle" fontSize="12">
+
+        <text
+          x={cx - r - 10}
+          y={cy + 4}
+          textAnchor="middle"
+          fontSize="12"
+          className="cursor-pointer select-none hover:font-bold"
+          onClick={(e) => {
+            e.stopPropagation();
+            onChange(270);
+          }}
+        >
           W
         </text>
 
@@ -797,6 +883,16 @@ function OrientationDial({
           stroke="black"
           strokeWidth="7"
           strokeLinecap="round"
+          className="cursor-grab active:cursor-grabbing"
+          onPointerDown={(e) => {
+            e.currentTarget.setPointerCapture(e.pointerId);
+            onChange(eventToDeg(e));
+          }}
+          onPointerMove={(e) => {
+            if (e.buttons === 1) {
+              onChange(eventToDeg(e));
+            }
+          }}
         />
 
         <circle cx={cx} cy={cy} r="4.5" fill="black" />
@@ -840,9 +936,9 @@ export default function Page() {
 
   const [latitude, setLatitude] = useState(47.6);
 
-  const [analysisDate, setAnalysisDate] = useState<"03-21" | "06-21" | "12-21">(
-    "06-21"
-  );
+  const [analysisDate, setAnalysisDate] = useState<
+    "03-21" | "06-21" | "09-21" | "12-21"
+  >("06-21");
   const [timeMode, setTimeMode] = useState<"full_day" | "9" | "12" | "15">(
     "full_day"
   );
@@ -871,25 +967,56 @@ export default function Page() {
 
   const [mounted, setMounted] = useState(false);
 
+  const [currentUser, setCurrentUser] = useState<AppUser | null>(null);
+  const [loginName, setLoginName] = useState("");
+  const [loginEmail, setLoginEmail] = useState("");
+
+  const [userMenuOpen, setUserMenuOpen] = useState(false);
+
   const [orientationDeg, setOrientationDeg] = useState(180);
+
+  const scenarioStorageKey = currentUser
+    ? `savedScenarios:${currentUser.email.toLowerCase()}`
+    : null;
 
   useEffect(() => {
   setMounted(true);
 
   if (typeof window === "undefined") return;
 
-  const raw = localStorage.getItem("savedScenarios");
-  if (!raw) return;
+  const rawUser = localStorage.getItem("glareAppUser");
+  if (!rawUser) return;
 
   try {
-    const parsed = JSON.parse(raw);
+    const parsedUser = JSON.parse(rawUser);
+    if (parsedUser?.name && parsedUser?.email) {
+      setCurrentUser(parsedUser);
+      setLoginName(parsedUser.name);
+      setLoginEmail(parsedUser.email);
+    }
+  } catch (e) {
+    console.error("Failed to load glare app user:", e);
+  }
+}, []);
+
+useEffect(() => {
+  if (typeof window === "undefined") return;
+  if (!scenarioStorageKey) return;
+
+  const raw = localStorage.getItem(scenarioStorageKey);
+
+  try {
+    const parsed = raw ? JSON.parse(raw) : [];
     if (Array.isArray(parsed)) {
       setSavedScenarios(parsed);
+      setSelectedScenarioIds([]);
     }
   } catch (e) {
     console.error("Failed to load saved scenarios from localStorage:", e);
+    setSavedScenarios([]);
+    setSelectedScenarioIds([]);
   }
-}, []);
+}, [scenarioStorageKey]);
 
   const [scenarioName, setScenarioName] = useState("");
   const [savedScenarios, setSavedScenarios] = useState<SavedScenario[]>([]);
@@ -1049,8 +1176,9 @@ export default function Page() {
 
     setSavedScenarios((prev) => {
       const updated = [newScenario, ...prev];
-      if (typeof window !== "undefined") {
-        localStorage.setItem("savedScenarios", JSON.stringify(updated));
+      if (typeof window !== "undefined") 
+      if (scenarioStorageKey) {
+        localStorage.setItem(scenarioStorageKey, JSON.stringify(updated));
       }
       return updated;
     });
@@ -1072,8 +1200,9 @@ export default function Page() {
   function deleteScenario(id: string) {
     setSavedScenarios((prev) => {
       const updated = prev.filter((s) => s.id !== id);
-      if (typeof window !== "undefined") {
-        localStorage.setItem("savedScenarios", JSON.stringify(updated));
+      if (typeof window !== "undefined") 
+      if (scenarioStorageKey) {
+        localStorage.setItem(scenarioStorageKey, JSON.stringify(updated));
       }
       return updated;
     });
@@ -1151,6 +1280,47 @@ export default function Page() {
     };
 
     img.src = url;
+  }
+
+  function exportHourlyResultsToCsv() {
+    if (!result?.times?.length) return;
+
+    const rows = [
+      [
+        "Time",
+        "Sun Visible",
+        "Altitude",
+        "Azimuth",
+        "Glare Area (sf)",
+        "Coverage (%)",
+        "Max Penetration (ft)",
+      ],
+      ...result.times.map((t) => [
+        t.label,
+        t.sun_visible ? "Yes" : "No",
+        t.altitude_deg === null ? "" : t.altitude_deg.toFixed(1),
+        t.azimuth_deg === null ? "" : t.azimuth_deg.toFixed(1),
+        t.sunlit_area_sqft.toFixed(2),
+        (t.coverage_ratio * 100).toFixed(1),
+        t.max_penetration_ft.toFixed(2),
+      ]),
+    ];
+
+    const csv = rows
+      .map((row) =>
+        row.map((cell) => `"${String(cell).replace(/"/g, '""')}"`).join(",")
+      )
+      .join("\n");
+
+    const blob = new Blob([csv], { type: "text/csv;charset=utf-8;" });
+    const url = URL.createObjectURL(blob);
+
+    const a = document.createElement("a");
+    a.href = url;
+    a.download = "hourly-results.csv";
+    a.click();
+
+    URL.revokeObjectURL(url);
   }
 
   async function exportAllPreviews() {
@@ -1451,8 +1621,9 @@ export default function Page() {
   }
 }
 
+
     return (
-      <svg viewBox={`0 0 ${w} ${h}`} className="w-full h-auto">
+      <svg viewBox={`0 0 ${w} ${h}`} className="w-full h-full object-contain">
         <rect
           x={wallLeft}
           y={wallTop}
@@ -1475,9 +1646,7 @@ export default function Page() {
 
         {lines}
 
-        <text x="12" y="18" fontSize="12" fill="black">
-          Elevation
-        </text>
+        
       </svg>
     );
     }, [
@@ -1495,326 +1664,166 @@ export default function Page() {
     verticalSpacing,
   ]);
   
-  const topPreview = useMemo(() => {
-    const w = 320;
-    const h = 240;
-    const pad = 40;
+ const topPreview = useMemo(() => {
+  const w = 320;
+  const h = 240;
+  const pad = 42;
 
-    const innerW = w - pad * 2;
-    const innerH = h - pad * 2;
-    const scale = Math.min(innerW / roomWidth, innerH / roomDepth);
+  const innerW = w - pad * 2;
+  const innerH = h - pad * 2;
+  const scale = Math.min(innerW / roomWidth, innerH / roomDepth);
 
-    const offsetX = (w - roomWidth * scale) / 2;
-    const offsetY = (h - roomDepth * scale) / 2;
+  const offsetX = (w - roomWidth * scale) / 2;
+  const offsetY = (h - roomDepth * scale) / 2;
 
-    const sx = (value: number) => offsetX + value * scale;
-    const sy = (value: number) => offsetY + value * scale;
+  const sx = (value: number) => offsetX + value * scale;
+  const sy = (value: number) => offsetY + value * scale;
 
-    const roomLeft = sx(0);
-    const roomRight = sx(roomWidth);
-    const roomTop = sy(0);
-    const roomBottom = sy(roomDepth);
+  const roomLeft = sx(0);
+  const roomRight = sx(roomWidth);
+  const roomTop = sy(0);
+  const roomBottom = sy(roomDepth);
 
-    const windowLeftVal = clamp(windowOffset, 0, Math.max(0, roomWidth - windowWidth));
-    const windowRightVal = windowLeftVal + windowWidth;
-    const windowCenter = windowLeftVal + windowWidth / 2;
+  const roomCenterX = (roomLeft + roomRight) / 2;
+  const roomCenterY = (roomTop + roomBottom) / 2;
 
-    const shapes: React.ReactNode[] = [];
+  const windowLeftVal = clamp(
+    windowOffset,
+    0,
+    Math.max(0, roomWidth - windowWidth)
+  );
+  const windowRightVal = windowLeftVal + windowWidth;
+  const windowCenter = windowLeftVal + windowWidth / 2;
 
-    const dir = ((orientationDeg % 360) + 360) % 360;
+  const rotationDeg = orientationDeg;
 
-    function topFacadeLine(u0: number, u1: number) {
-      if (dir >= 135 && dir < 225) {
-        // South
-        return {
-          x1: sx(u0),
-          y1: roomTop,
-          x2: sx(u1),
-          y2: roomTop,
-        };
-      }
+  const shapes: React.ReactNode[] = [];
 
-      if (dir >= 315 || dir < 45) {
-        // North
-        return {
-          x1: sx(roomWidth - u0),
-          y1: roomBottom,
-          x2: sx(roomWidth - u1),
-          y2: roomBottom,
-        };
-      }
+  if (hasShading && (shadingType === "horizontal" || shadingType === "eggcrate")) {
+    const depthPx = Math.max(8, horizontalDepth * scale);
 
-      if (dir >= 45 && dir < 135) {
-        // East
-        return {
-          x1: roomRight,
-          y1: sy(u0),
-          x2: roomRight,
-          y2: sy(u1),
-        };
-      }
+    shapes.push(
+      <rect
+        key="h-top"
+        x={sx(windowLeftVal)}
+        y={roomTop - depthPx}
+        width={sx(windowRightVal) - sx(windowLeftVal)}
+        height={depthPx}
+        fill="none"
+        stroke="black"
+        strokeWidth="1.2"
+      />
+    );
+  }
 
-      // West
-      return {
-        x1: roomLeft,
-        y1: sy(roomDepth - u0),
-        x2: roomLeft,
-        y2: sy(roomDepth - u1),
-      };
-    }
+  if (hasShading && (shadingType === "vertical" || shadingType === "eggcrate")) {
+    const depthPx = Math.max(8, verticalDepth * scale);
+    const thick = Math.max(2, shadingThickness * scale);
 
-    if (hasShading && (shadingType === "horizontal" || shadingType === "eggcrate")) {
-      const depthPx = Math.max(8, horizontalDepth * scale);
+    for (let i = 0; i < verticalCount; i++) {
+      const x0 = windowLeftVal + i * verticalSpacing;
+      if (x0 > windowRightVal) break;
 
-      if (dir >= 135 && dir < 225) {
-        // South
-        shapes.push(
-          <rect
-            key="h-top"
-            x={sx(windowLeftVal)}
-            y={roomTop - depthPx}
-            width={sx(windowRightVal) - sx(windowLeftVal)}
-            height={depthPx}
-            fill="none"
-            stroke="black"
-            strokeWidth="1.2"
-          />
-        );
-      } else if (dir >= 315 || dir < 45) {
-        // North
-        shapes.push(
-          <rect
-            key="h-top"
-            x={sx(roomWidth - windowRightVal)}
-            y={roomBottom}
-            width={sx(windowRightVal) - sx(windowLeftVal)}
-            height={depthPx}
-            fill="none"
-            stroke="black"
-            strokeWidth="1.2"
-          />
-        );
-      } else if (dir >= 45 && dir < 135) {
-        // East
-        shapes.push(
-          <rect
-            key="h-top"
-            x={roomRight}
-            y={sy(windowLeftVal)}
-            width={depthPx}
-            height={sy(windowRightVal) - sy(windowLeftVal)}
-            fill="none"
-            stroke="black"
-            strokeWidth="1.2"
-          />
-        );
-      } else {
-        // West
-        shapes.push(
-          <rect
-            key="h-top"
-            x={roomLeft - depthPx}
-            y={sy(roomDepth - windowRightVal)}
-            width={depthPx}
-            height={sy(roomDepth - windowLeftVal) - sy(roomDepth - windowRightVal)}
-            fill="none"
-            stroke="black"
-            strokeWidth="1.2"
-          />
-        );
-      }
-    }
-
-    if (hasShading && (shadingType === "vertical" || shadingType === "eggcrate")) {
-      const depthPx = Math.max(8, verticalDepth * scale);
-      const thick = Math.max(2, shadingThickness * scale);
-
-      for (let i = 0; i < verticalCount; i++) {
-        const x0 = windowLeftVal + i * verticalSpacing;
-        if (x0 > windowRightVal) break;
-
-        if (dir >= 135 && dir < 225) {
-          // South
-          shapes.push(
-            <rect
-              key={`vt-${i}`}
-              x={sx(x0)}
-              y={roomTop - depthPx}
-              width={thick}
-              height={depthPx}
-              fill="none"
-              stroke="black"
-              strokeWidth="1.2"
-            />
-          );
-        } else if (dir >= 315 || dir < 45) {
-          // North
-          shapes.push(
-            <rect
-              key={`vt-${i}`}
-              x={sx(roomWidth - x0) - thick}
-              y={roomBottom}
-              width={thick}
-              height={depthPx}
-              fill="none"
-              stroke="black"
-              strokeWidth="1.2"
-            />
-          );
-        } else if (dir >= 45 && dir < 135) {
-          // East
-          shapes.push(
-            <rect
-              key={`vt-${i}`}
-              x={roomRight}
-              y={sy(x0)}
-              width={depthPx}
-              height={thick}
-              fill="none"
-              stroke="black"
-              strokeWidth="1.2"
-            />
-          );
-        } else {
-          // West
-          shapes.push(
-            <rect
-              key={`vt-${i}`}
-              x={roomLeft - depthPx}
-              y={sy(roomDepth - x0) - thick}
-              width={depthPx}
-              height={thick}
-              fill="none"
-              stroke="black"
-              strokeWidth="1.2"
-            />
-          );
-        }
-      }
-    }
-
-    const activeHour = displayHour;
-    const singlePatch = computeSunPatchAtHour(activeHour, hasShading);
-
-    const patchShapes: React.ReactNode[] = [];
-    const penetrationGraphics: React.ReactNode[] = [];
-
-    if (timeMode === "full_day" && daylightHours.length > 0) {
-      const total = daylightHours.length;
-
-      daylightHours.forEach((item, idx) => {
-        if (!item.patch) return;
-        const p = item.patch;
-
-        if (p.hullPoints.length >= 3) {
-          const opacity = 0.18 + (idx / Math.max(1, total - 1)) * 0.42;
-
-          patchShapes.push(
-            <polygon
-              key={`plan-poly-${idx}`}
-              points={p.hullPoints.map((pt) => `${sx(pt.x)},${sy(pt.y)}`).join(" ")}
-              fill={SHADOW_FILL}
-              opacity={opacity}
-            />
-          );
-        }
-      });
-
-      const visible = [...daylightHours].sort((a, b) => a.hour - b.hour);
-      const earliest = visible[0];
-      const latest = visible[visible.length - 1];
-      const noon = visible.find((d) => d.hour === 12) ?? null;
-      const maxItem = visible.reduce((max, item) =>
-        item.penetration > max.penetration ? item : max
+      shapes.push(
+        <rect
+          key={`vt-${i}`}
+          x={sx(x0)}
+          y={roomTop - depthPx}
+          width={thick}
+          height={depthPx}
+          fill="none"
+          stroke="black"
+          strokeWidth="1.2"
+        />
       );
+    }
+  }
 
-      const selectedMarkers = [earliest, noon, latest, maxItem]
-        .filter(Boolean)
-        .filter(
-          (item, index, arr) =>
-            arr.findIndex((d) => d?.hour === item?.hour) === index
-        );
+  const activeHour = displayHour;
+  const singlePatch = computeSunPatchAtHour(activeHour, hasShading);
 
-      selectedMarkers.forEach((item, idx) => {
-        if (!item) return;
+  const patchShapes: React.ReactNode[] = [];
+  const penetrationGraphics: React.ReactNode[] = [];
 
-        const lineEnd = Math.min(roomDepth, item.penetration);
-        const y = sy(lineEnd);
+  if (timeMode === "full_day" && daylightHours.length > 0) {
+    const total = daylightHours.length;
 
-        const markerHalf = item.hour === maxItem.hour ? 18 : 12;
-        const x1 = sx(windowCenter) - markerHalf;
-        const x2 = sx(windowCenter) + markerHalf;
-        const labelOffsetY = [-8, 12, -14, 18][idx] ?? (idx % 2 === 0 ? -8 : 12);
-        const isMax = item.hour === maxItem.hour;
+    daylightHours.forEach((item, idx) => {
+      if (!item.patch) return;
+      const p = item.patch;
 
-        penetrationGraphics.push(
-          <g key={`pen-marker-${item.hour}`}>
-            <line
-              x1={x1}
-              y1={y}
-              x2={x2}
-              y2={y}
-              stroke="#6b7280"
-              strokeWidth={isMax ? "2.2" : "1.3"}
-              strokeDasharray={isMax ? "none" : "4 3"}
-              opacity={0.95}
-            />
-            <text
-              x={x2 + 12}
-              y={y + labelOffsetY}
-              fontSize="9"
-              fill="#4b5563"
-              opacity={0.98}
-            >
-              {isMax ? `${item.label} max` : item.label}
-            </text>
-          </g>
-        );
-      });
-    } else if (singlePatch) {
-      if (singlePatch.hullPoints.length >= 3) {
+      if (p.hullPoints.length >= 3) {
+        const opacity = 0.18 + (idx / Math.max(1, total - 1)) * 0.42;
+
         patchShapes.push(
           <polygon
-            key="plan-patch-main"
-            points={singlePatch.hullPoints
-              .map((pt) => `${sx(pt.x)},${sy(pt.y)}`)
-              .join(" ")}
+            key={`plan-poly-${idx}`}
+            points={p.hullPoints.map((pt) => `${sx(pt.x)},${sy(pt.y)}`).join(" ")}
             fill={SHADOW_FILL}
-            opacity={SHADOW_OPACITY}
+            opacity={opacity}
           />
         );
       }
+    });
 
-      if (maxPenetrationInfo && maxPenetrationInfo.value > 0) {
-        const lineEnd = Math.min(roomDepth, singlePatch.maxPenetration);
-        penetrationGraphics.push(
-          <g key="single-pen">
-            <line
-              x1={sx(windowCenter)}
-              y1={sy(0)}
-              x2={sx(windowCenter)}
-              y2={sy(lineEnd)}
-              stroke="#6b7280"
-              strokeWidth="2"
-              strokeDasharray="6 4"
-            />
-            <text
-              x={sx(windowCenter) + 8}
-              y={sy(lineEnd) - 6}
-              fontSize="10"
-              fill="#4b5563"
-            >
-              {singlePatch.maxPenetration.toFixed(1)} ft @ {displayHour}:00
-            </text>
-          </g>
-        );
-      }
+    const visible = [...daylightHours].sort((a, b) => a.hour - b.hour);
+    const earliest = visible[0];
+    const latest = visible[visible.length - 1];
+    const noon = visible.find((d) => d.hour === 12) ?? null;
+    const maxItem = visible.reduce((max, item) =>
+      item.penetration > max.penetration ? item : max
+    );
+
+    const selectedMarkers = [earliest, noon, latest, maxItem]
+      .filter(Boolean)
+      .filter(
+        (item, index, arr) =>
+          arr.findIndex((d) => d?.hour === item?.hour) === index
+      );
+
+    selectedMarkers.forEach((item, idx) => {
+      if (!item) return;
+
+      const lineEnd = Math.min(roomDepth, item.penetration);
+      const y = sy(lineEnd);
+      const markerHalf = item.hour === maxItem.hour ? 18 : 12;
+      const x1 = sx(windowCenter) - markerHalf;
+      const x2 = sx(windowCenter) + markerHalf;
+      const isMax = item.hour === maxItem.hour;
+
+      penetrationGraphics.push(
+        <g key={`pen-marker-${item.hour}`}>
+          <line
+            x1={x1}
+            y1={y}
+            x2={x2}
+            y2={y}
+            stroke="#6b7280"
+            strokeWidth={isMax ? "2.2" : "1.3"}
+            strokeDasharray={isMax ? "none" : "4 3"}
+            opacity={0.95}
+          />
+        </g>
+      );
+    });
+  } else if (singlePatch) {
+    if (singlePatch.hullPoints.length >= 3) {
+      patchShapes.push(
+        <polygon
+          key="plan-patch-main"
+          points={singlePatch.hullPoints
+            .map((pt) => `${sx(pt.x)},${sy(pt.y)}`)
+            .join(" ")}
+          fill={SHADOW_FILL}
+          opacity={SHADOW_OPACITY}
+        />
+      );
     }
+  }
 
-    const windowLine = topFacadeLine(windowLeftVal, windowRightVal);
-
-    return (
-      <svg viewBox={`0 0 ${w} ${h}`} className="w-full h-auto">
+  return (
+    <svg viewBox={`0 0 ${w} ${h}`} className="w-full h-full object-contain">
+      <g transform={`rotate(${rotationDeg} ${roomCenterX} ${roomCenterY})`}>
         <rect
           x={roomLeft}
           y={roomTop}
@@ -1829,47 +1838,36 @@ export default function Page() {
         {penetrationGraphics}
 
         <line
-          x1={windowLine.x1}
-          y1={windowLine.y1}
-          x2={windowLine.x2}
-          y2={windowLine.y2}
+          x1={sx(windowLeftVal)}
+          y1={roomTop}
+          x2={sx(windowRightVal)}
+          y2={roomTop}
           stroke="black"
           strokeWidth="2"
         />
 
         {shapes}
-
-        <text x="12" y="18" fontSize="12" fill="black">
-          Top view
-        </text>
-        {timeMode === "full_day" && (
-          <text x="12" y="30" fontSize="9" fill="#6b7280">
-            all day: earliest / noon / latest / max
-          </text>
-        )}
-      </svg>
-    );
-  }, [
-    roomWidth,
-    roomDepth,
-    analysisHeight,
-    windowWidth,
-    windowOffset,
-    hasShading,
-    shadingType,
-    horizontalDepth,
-    verticalDepth,
-    horizontalCount,
-    verticalCount,
-    horizontalSpacing,
-    verticalSpacing,
-    shadingThickness,
-    displayHour,
-    maxPenetrationInfo,
-    daylightHours,
-    timeMode,
-    orientationDeg,
-  ]);
+      </g>
+    </svg>
+  );
+}, [
+  roomWidth,
+  roomDepth,
+  analysisHeight,
+  windowWidth,
+  windowOffset,
+  hasShading,
+  shadingType,
+  horizontalDepth,
+  verticalDepth,
+  verticalCount,
+  verticalSpacing,
+  shadingThickness,
+  displayHour,
+  daylightHours,
+  timeMode,
+  orientationDeg,
+]);
 
   const box3DPreview = useMemo(() => {
     const w = 920;
@@ -1884,7 +1882,7 @@ export default function Page() {
     const domeCenterZ = 0;
 
     const zoom = 16 * previewZoom;
-    const yaw = degToRad(previewRotate + orientationDeg);
+    const yaw = degToRad(previewRotate);
 
     const roomScaleY = 0.8;
     const roomScaleZ = 0.95;
@@ -1899,7 +1897,7 @@ export default function Page() {
     const winOffsetX =
       clamp(windowOffset, 0, Math.max(0, roomWidth - windowWidth)) * zoom;
 
-    function project(x: number, y: number, z: number) {
+    function projectWorld(x: number, y: number, z: number) {
       const cosA = Math.cos(yaw);
       const sinA = Math.sin(yaw);
 
@@ -1913,6 +1911,21 @@ export default function Page() {
       };
     }
 
+    function projectRoom(x: number, y: number, z: number) {
+      const theta = degToRad(orientationDeg - 180);
+
+      const cx = roomX / 2;
+      const cy = roomY / 2;
+
+      const dx = x - cx;
+      const dy = y - cy;
+
+      const rx = dx * Math.cos(theta) - dy * Math.sin(theta);
+      const ry = dx * Math.sin(theta) + dy * Math.cos(theta);
+
+      return projectWorld(cx + rx, cy + ry, z);
+    }
+
     function pts(p: { x: number; y: number }[]) {
       return p.map((pt) => `${pt.x},${pt.y}`).join(" ");
     }
@@ -1923,25 +1936,9 @@ export default function Page() {
 
     // Rotate facade geometry itself to the correct wall
     function facadePoint(u: number, outwardDepth: number, z: number) {
-      const dir = ((orientationDeg % 360) + 360) % 360;
-
-      if (dir >= 135 && dir < 225) {
-        // South
-        return project(u, 0 - outwardDepth, z);
-      }
-
-      if (dir >= 315 || dir < 45) {
-        // North
-        return project(roomX - u, roomY + outwardDepth, z);
-      }
-
-      if (dir >= 45 && dir < 135) {
-        // East
-        return project(roomX + outwardDepth, u, z);
-      }
-
-      // West
-      return project(0 - outwardDepth, roomY - u, z);
+      // Keep everything on the local front facade.
+      // The whole room is already rotated by yaw = previewRotate + orientationDeg.
+      return projectRoom(u, 0 - outwardDepth, z);
     }
     function worldToPreviewSun(
       altitudeDegLocal: number,
@@ -1949,20 +1946,15 @@ export default function Page() {
       radius: number
     ) {
       const sun = sunVectorWorld(altitudeDegLocal, azimuthDegLocal);
-      const { inward, right } = getFacadeBasis(facadeAzimuth);
 
-      const sx = sun.x * right.x + sun.y * right.y;
-      const sy = sun.x * inward.x + sun.y * inward.y;
-      const sz = sun.z;
+      const px = (domeCenterX + sun.x * radius) * zoom;
+      const py = (domeCenterY + sun.y * radius * roomScaleY) * zoom;
+      const pz = (domeCenterZ + sun.z * radius * roomScaleZ) * zoom;
 
-      const px = (domeCenterX + sx * radius) * zoom;
-      const py = (domeCenterY + sy * radius * roomScaleY) * zoom;
-      const pz = (domeCenterZ + sz * radius * roomScaleZ) * zoom;
-
-      return project(px, py, pz);
+      return projectWorld(px, py, pz);
     }
 
-    function seasonalSunPath(dateKey: "03-21" | "06-21" | "12-21") {
+    function seasonalSunPath(dateKey: "03-21" | "06-21" | "09-21" | "12-21") {
       const { month, day } = resolveDate(dateKey);
       const pts3d: { x: number; y: number }[] = [];
 
@@ -1988,7 +1980,7 @@ export default function Page() {
         const t = (i / 120) * Math.PI * 2;
         const gx = domeCenterX + Math.sin(t) * radius;
         const gy = domeCenterY + Math.cos(t) * radius * 0.72;
-        const p = project(gx * zoom, gy * zoom * roomScaleY, 0);
+        const p = projectWorld(gx * zoom, gy * zoom * roomScaleY, 0);
         pts3d.push({
           x: Number(p.x.toFixed(2)),
           y: Number(p.y.toFixed(2)),
@@ -1999,7 +1991,7 @@ export default function Page() {
     }
 
     function pathLabelPoint(
-      dateKey: "03-21" | "06-21" | "12-21",
+      dateKey: "03-21" | "06-21" | "09-21" | "12-21",
       hour: number,
       radius = domeRadius
     ) {
@@ -2010,21 +2002,21 @@ export default function Page() {
 
     function groundCompassPoint(azimuthDegLocal: number, radius: number) {
       const azRad = degToRad(azimuthDegLocal);
-      const gx = roomWidth / 2 + Math.sin(azRad) * radius;
+      const gx = roomWidth / 2 - Math.sin(azRad) * radius;
       const gy = roomDepth * 0.55 + Math.cos(azRad) * radius * 0.72;
-      return project(gx * zoom, gy * zoom * roomScaleY, 0);
+      return projectWorld(gx * zoom, gy * zoom * roomScaleY, 0);
     }
 
     // Room box stays as-is
-    const A = project(0, 0, 0);
-    const B = project(roomX, 0, 0);
-    const C = project(roomX, roomY, 0);
-    const D = project(0, roomY, 0);
+    const A = projectRoom(0, 0, 0);
+    const B = projectRoom(roomX, 0, 0);
+    const C = projectRoom(roomX, roomY, 0);
+    const D = projectRoom(0, roomY, 0);
 
-    const A1 = project(0, 0, roomZ);
-    const B1 = project(roomX, 0, roomZ);
-    const C1 = project(roomX, roomY, roomZ);
-    const D1 = project(0, roomY, roomZ);
+    const A1 = projectRoom(0, 0, roomZ);
+    const B1 = projectRoom(roomX, 0, roomZ);
+    const C1 = projectRoom(roomX, roomY, roomZ);
+    const D1 = projectRoom(0, roomY, roomZ);
 
     // Window now actually moves to the oriented facade
     const W1 = facadePoint(winOffsetX, 0, sill);
@@ -2050,8 +2042,8 @@ export default function Page() {
     const gridStep = 2;
 
     for (let x = 0; x <= roomWidth; x += gridStep) {
-      const p1 = project(x * zoom, 0, analysisZ);
-      const p2 = project(x * zoom, roomY, analysisZ);
+      const p1 = projectRoom(x * zoom, 0, analysisZ);
+      const p2 = projectRoom(x * zoom, roomY, analysisZ);
       gridLines3D.push(
         <line
           key={`grid-x-${x}`}
@@ -2067,8 +2059,8 @@ export default function Page() {
     }
 
     for (let y = 0; y <= roomDepth; y += gridStep) {
-      const p1 = project(0, y * zoom * roomScaleY, analysisZ);
-      const p2 = project(roomX, y * zoom * roomScaleY, analysisZ);
+      const p1 = projectRoom(0, y * zoom * roomScaleY, analysisZ);
+      const p2 = projectRoom(roomX, y * zoom * roomScaleY, analysisZ);
       gridLines3D.push(
         <line
           key={`grid-y-${y}`}
@@ -2083,15 +2075,15 @@ export default function Page() {
       );
     }
 
-    const planeA = project(0, 0, analysisZ);
-    const planeB = project(roomX, 0, analysisZ);
-    const planeC = project(roomX, roomY, analysisZ);
-    const planeD = project(0, roomY, analysisZ);
+    const planeA = projectRoom(0, 0, analysisZ);
+    const planeB = projectRoom(roomX, 0, analysisZ);
+    const planeC = projectRoom(roomX, roomY, analysisZ);
+    const planeD = projectRoom(0, roomY, analysisZ);
 
     const patchShapes: React.ReactNode[] = [];
     if (patch && patch.hullPoints.length >= 3) {
       const poly3d = patch.hullPoints.map((pt) =>
-        project(pt.x * zoom, pt.y * zoom * roomScaleY, analysisZ)
+        projectRoom(pt.x * zoom, pt.y * zoom * roomScaleY, analysisZ)
       );
 
       patchShapes.push(
@@ -2115,7 +2107,7 @@ export default function Page() {
 
         const points = item.patch.hullPoints
           .map((pt) => {
-            const p = project(pt.x * zoom, pt.y * zoom * roomScaleY, analysisZ);
+            const p = projectRoom(pt.x * zoom, pt.y * zoom * roomScaleY, analysisZ);
             return `${p.x},${p.y}`;
           })
           .join(" ");
@@ -2136,8 +2128,8 @@ export default function Page() {
 
     // Horizontal shading
     if (hasShading && (shadingType === "horizontal" || shadingType === "eggcrate")) {
-      const x0 = ((roomWidth - windowWidth) / 2) * zoom;
-      const x1 = ((roomWidth + windowWidth) / 2) * zoom;
+      const x0 = winOffsetX;
+      const x1 = winOffsetX + winW;
 
       for (let i = 0; i < horizontalCount; i++) {
         const zTopFt = sillHeight + windowHeight - i * horizontalSpacing;
@@ -2199,9 +2191,12 @@ export default function Page() {
     // Vertical shading
     if (hasShading && (shadingType === "vertical" || shadingType === "eggcrate")) {
       for (let i = 0; i < verticalCount; i++) {
-        const x0Ft = (roomWidth - windowWidth) / 2 + i * verticalSpacing;
-        const x1Ft = Math.min(x0Ft + shadingThickness, (roomWidth + windowWidth) / 2);
-        if (x0Ft >= (roomWidth + windowWidth) / 2) break;
+        const windowLeftFt = clamp(windowOffset, 0, Math.max(0, roomWidth - windowWidth));
+        const windowRightFt = windowLeftFt + windowWidth;
+
+        const x0Ft = windowLeftFt + i * verticalSpacing;
+        const x1Ft = Math.min(x0Ft + shadingThickness, windowRightFt);
+        if (x0Ft >= windowRightFt) break;
 
         const x0 = x0Ft * zoom;
         const x1 = x1Ft * zoom;
@@ -2258,6 +2253,7 @@ export default function Page() {
     const sunPt = activeSunPoint();
     const juneLabelPt = pathLabelPoint("06-21", 12);
     const marchLabelPt = pathLabelPoint("03-21", 12);
+    const sepLabelPt = pathLabelPoint("09-21", 12);
     const decLabelPt = pathLabelPoint("12-21", 12);
 
     const northPt = groundCompassPoint(0, 50.5);
@@ -2268,7 +2264,7 @@ export default function Page() {
     const domeRingPoints = groundDomeRingPoints(domeRadius);
 
     return (
-      <svg viewBox={`0 0 ${w} ${h}`} className="w-full h-auto">
+      <svg viewBox={`0 0 ${w} ${h}`} className="w-full h-full object-contain">
         {faces.map((face, i) => (
           <polygon
             key={i}
@@ -2343,6 +2339,13 @@ export default function Page() {
           strokeDasharray="8 5"
         />
         <polyline
+          points={seasonalSunPath("09-21")}
+          fill="none"
+          stroke={analysisDate === "09-21" ? "#111111" : "#2f2f2f"}
+          strokeWidth={analysisDate === "12-21" ? "2.4" : "1.8"}
+        />
+
+        <polyline
           points={seasonalSunPath("12-21")}
           fill="none"
           stroke={analysisDate === "12-21" ? "#111111" : "#2f2f2f"}
@@ -2358,6 +2361,9 @@ export default function Page() {
         </text>
         <text x={marchLabelPt.x + 8} y={marchLabelPt.y - 8} fontSize="13" fill="#111111">
           March 21
+        </text>
+         <text x={sepLabelPt.x + 8} y={marchLabelPt.y - 8} fontSize="13" fill="#111111">
+          September 21
         </text>
         <text x={decLabelPt.x + 8} y={decLabelPt.y + 5} fontSize="13" fill="#111111">
           Dec 21
@@ -2443,21 +2449,125 @@ export default function Page() {
   setPreviewZoom((prev) => Math.max(0.32, Math.min(2.8, prev + delta)));
 }
 
+if (!currentUser) {
+  return (
+    <main className="min-h-screen bg-slate-50 p-8">
+      <div className="mx-auto mt-24 max-w-md rounded-3xl border bg-white p-8 shadow-sm">
+        <h1 className="text-2xl font-semibold text-slate-900">
+          Glare Analysis App
+        </h1>
+
+        <p className="mt-2 text-sm text-slate-500">
+          Enter your name and email to keep saved scenarios separate on this device.
+        </p>
+
+        <label className="mt-6 block">
+          <div className="mb-1 text-sm text-slate-600">Name</div>
+          <input
+            value={loginName}
+            onChange={(e) => setLoginName(e.target.value)}
+            className="w-full rounded-xl border border-slate-300 px-3 py-2 outline-none focus:border-slate-500"
+            placeholder="Your name"
+          />
+        </label>
+
+        <label className="mt-4 block">
+          <div className="mb-1 text-sm text-slate-600">Email</div>
+          <input
+            type="email"
+            value={loginEmail}
+            onChange={(e) => setLoginEmail(e.target.value)}
+            className="w-full rounded-xl border border-slate-300 px-3 py-2 outline-none focus:border-slate-500"
+            placeholder="you@example.com"
+          />
+        </label>
+
+        <button
+          onClick={async () => {
+            const name = loginName.trim();
+            const email = loginEmail.trim().toLowerCase();
+
+            if (!name || !email.includes("@")) {
+              alert("Please enter a valid name and email.");
+              return;
+            }
+
+            const user = { name, email };
+
+            localStorage.setItem("glareAppUser", JSON.stringify(user));
+            setCurrentUser(user);
+
+            const { error } = await supabase.from("users").insert([
+              {
+                name,
+                email,
+              },
+            ]);
+
+            if (error) {
+              console.error("Failed to save login:", error.message);
+            }
+          }}
+          className="mt-6 w-full rounded-xl bg-slate-900 px-4 py-2 text-white hover:bg-slate-800"
+        >
+          Continue
+        </button>
+      </div>
+    </main>
+  );
+}
+
   return (
     <main className="h-screen overflow-hidden bg-slate-50 text-slate-900">
       <div className="mx-auto flex h-screen max-w-[1800px] flex-col p-4">
-        <h1 className="text-3xl font-bold tracking-tight">Glare Analysis</h1>
-        <p className="mt-2 text-sm text-slate-600">
-          Geometric direct sun patch study with configurable shading devices.
-        </p>
+        <div className="flex items-start justify-between gap-4">
+          <div>
+            <h1 className="text-3xl font-bold tracking-tight">Glare Analysis</h1>
+            <p className="mt-2 text-sm text-slate-600">
+              Geometric direct sun patch study with configurable shading devices.
+            </p>
+          </div>
 
-            <div className="mt-4 grid min-h-0 flex-1 grid-cols-[340px_minmax(0,1fr)_430px] gap-4">
+          {currentUser && (
+            <div className="relative">
+              <button
+                onClick={() => setUserMenuOpen((prev) => !prev)}
+                className="rounded-xl border bg-white px-3 py-2 text-sm text-slate-700 shadow-sm hover:bg-slate-50"
+              >
+                {currentUser.name}
+              </button>
+
+              {userMenuOpen && (
+                <div className="absolute right-0 z-50 mt-2 w-44 rounded-xl border bg-white p-2 shadow-lg">
+                  <div className="truncate px-2 py-1 text-xs text-slate-500">
+                    {currentUser.email}
+                  </div>
+
+                  <button
+                    onClick={() => {
+                      localStorage.removeItem("glareAppUser");
+                      setCurrentUser(null);
+                      setSavedScenarios([]);
+                      setSelectedScenarioIds([]);
+                      setUserMenuOpen(false);
+                    }}
+                    className="mt-1 w-full rounded-lg px-2 py-2 text-left text-sm text-slate-700 hover:bg-slate-100"
+                  >
+                    Log out
+                  </button>
+                </div>
+              )}
+            </div>
+          )}
+        </div>
+
+            <div className="mt-4 grid min-h-0 flex-1 grid-cols-1 gap-4 lg:grid-cols-[340px_minmax(0,1fr)]">
               <section className="min-h-0 overflow-y-auto rounded-2xl border border-slate-900 bg-white">
                 <div className="flex min-h-0 flex-col">
                   <div className="border-b px-4 py-3">
                     <h2 className="text-lg font-semibold">Inputs</h2>
                     <p className="mt-1 text-sm text-slate-500">
-                      Adjust parameters while keeping the results visible.
+                      Modify inputs to explore daylight behavior.
                     </p>
                   </div>
 
@@ -2490,9 +2600,23 @@ export default function Page() {
                     <label className="mt-4 block">
                       <div className="mb-1 flex items-center justify-between text-sm text-slate-600">
                         <span>Analysis Plane Height (ft)</span>
-                        <span className="font-medium text-slate-900">
-                          {analysisHeight.toFixed(1)} ft
-                        </span>
+                        <div className="flex items-center gap-2">
+                          <input
+                            type="number"
+                            value={analysisHeight}
+                            step="0.1"
+                            min="0"
+                            max={roomHeight}
+                            onChange={(e) => {
+                              const v = Number(e.target.value);
+                              if (!isNaN(v)) {
+                                setAnalysisHeight(Math.max(0, Math.min(roomHeight, v)));
+                              }
+                            }}
+                            className="w-20 rounded-lg border border-slate-300 px-2 py-1 text-sm text-right"
+                          />
+                          <span className="text-slate-600">ft</span>
+                        </div>
                       </div>
 
                       <input
@@ -2533,14 +2657,49 @@ export default function Page() {
                         step={0.5}
                         min={0}
                       />
-                      <NumberInput
-                        label="Window Offset from Left (ft)"
-                        value={windowOffset}
-                        setValue={setWindowOffset}
-                        step={0.5}
-                        min={0}
-                        max={Math.max(0, roomWidth - windowWidth)}
-                      />
+                      <div className="mt-3">
+                        <NumberInput
+                          label={`Window Offset from Left (ft) · max ${Math.max(
+                            0,
+                            roomWidth - windowWidth
+                          ).toFixed(1)} ft`}
+                          value={windowOffset}
+                          setValue={(v) =>
+                            setWindowOffset(clamp(v, 0, Math.max(0, roomWidth - windowWidth)))
+                          }
+                          step={0.5}
+                          min={0}
+                          max={Math.max(0, roomWidth - windowWidth)}
+                        />
+
+                        <div className="mt-2 grid grid-cols-3 gap-2">
+                          <button
+                            type="button"
+                            onClick={() => setWindowOffset(0)}
+                            className="rounded-lg border bg-white px-2 py-1 text-xs text-slate-700 hover:bg-slate-100"
+                          >
+                            Left
+                          </button>
+
+                          <button
+                            type="button"
+                            onClick={() =>
+                              setWindowOffset(Math.max(0, (roomWidth - windowWidth) / 2))
+                            }
+                            className="rounded-lg border bg-white px-2 py-1 text-xs text-slate-700 hover:bg-slate-100"
+                          >
+                            Center
+                          </button>
+
+                          <button
+                            type="button"
+                            onClick={() => setWindowOffset(Math.max(0, roomWidth - windowWidth))}
+                            className="rounded-lg border bg-white px-2 py-1 text-xs text-slate-700 hover:bg-slate-100"
+                          >
+                            Right
+                          </button>
+                        </div>
+                      </div>
                     </div>
 
                     <div className="border-t pt-4">
@@ -2563,14 +2722,15 @@ export default function Page() {
                           value={analysisDate}
                           onChange={(e) =>
                             setAnalysisDate(
-                              e.target.value as "03-21" | "06-21" | "12-21"
+                              e.target.value as "03-21" | "06-21" | "09-21" | "12-21"
                             )
                           }
                           className="w-full rounded-xl border border-slate-300 bg-white px-3 py-2"
                         >
-                          <option value="03-21">03-21</option>
-                          <option value="06-21">06-21</option>
-                          <option value="12-21">12-21</option>
+                          <option value="03-21">Spring Equinox</option>
+                          <option value="06-21">Summer Solstice</option>
+                          <option value="09-21">Autumn Equinox</option>
+                          <option value="12-21">Winter Solstice</option>
                         </select>
                       </label>
 
@@ -2787,6 +2947,14 @@ export default function Page() {
                   </button>
 
                   <button
+                    onClick={exportHourlyResultsToCsv}
+                    disabled={!result}
+                    className="rounded-lg border px-3 py-2 text-sm hover:bg-slate-50 disabled:opacity-50"
+                  >
+                    Export Excel
+                  </button>
+
+                  <button
                     onClick={exportAllPreviews}
                     className="rounded-lg bg-slate-900 px-3 py-2 text-sm text-white hover:bg-slate-700"
                   >
@@ -2794,19 +2962,28 @@ export default function Page() {
                   </button>
                 </div>
 
-                <div className="grid grid-cols-1 gap-6 md:grid-cols-2">
+                <div className="grid grid-cols-1 gap-4 md:grid-cols-2">
                   <div
                     ref={frontPreviewRef}
-                    className="rounded-2xl border bg-white p-4 shadow-sm"
+                    className="h-[320px] overflow-hidden rounded-2xl border bg-white p-4 shadow-sm"
                   >
-                    {frontPreview}
+                    <div className="text-sm font-medium text-slate-700">Elevation</div>
+                    <div className="mt-2 h-[calc(100%-1.75rem)]">
+                      {frontPreview}
+                    </div>
                   </div>
 
                   <div
                     ref={topPreviewRef}
-                    className="rounded-2xl border bg-white p-4 shadow-sm"
+                    className="h-[320px] overflow-hidden rounded-2xl border bg-white p-4 shadow-sm"
                   >
-                    {topPreview}
+                    <div className="text-sm font-medium text-slate-700">Top view</div>
+                    <div className="text-xs text-slate-500">
+                      all day: earliest / noon / latest / max
+                    </div>
+                    <div className="mt-2 h-[calc(100%-2.75rem)]">
+                      {topPreview}
+                    </div>
                   </div>
                 </div>
 
@@ -2826,7 +3003,7 @@ export default function Page() {
                 </div>
 
                 {result && (
-                  <div className="grid grid-cols-1 gap-4 md:grid-cols-4">
+                  <div className="grid grid-cols-1 gap-4 md:grid-cols-2">
                     <MetricCard
                       title="Best Time"
                       value={result.summary.best_time_label ?? "N/A"}
@@ -2993,6 +3170,12 @@ export default function Page() {
                                 <div className="font-medium">
                                   {scenario.inputs.windowWidth}w ×{" "}
                                   {scenario.inputs.windowHeight}h
+                                </div>
+                              </div>
+                              <div>
+                                <div className="text-slate-500">Plane Height</div>
+                                <div className="font-medium">
+                                  {scenario.inputs.analysisHeight} ft
                                 </div>
                               </div>
                             </div>

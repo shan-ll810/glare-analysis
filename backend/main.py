@@ -33,6 +33,7 @@ def resolve_date(analysis_date: str):
     mapping = {
         "03-21": (3, 21),
         "06-21": (6, 21),
+        "09-21": (9, 21),
         "12-21": (12, 21),
     }
     return mapping.get(analysis_date, (6, 21))
