@@ -448,15 +448,22 @@ def generate_shading_faces(data):
 # analysis helpers
 # =============================
 def get_time_samples(time_mode: str):
+
     if time_mode == "9":
         return [9.0]
+
     if time_mode == "12":
         return [12.0]
+
     if time_mode == "15":
         return [15.0]
 
-    # full_day: 24-hour analysis, matching GH validation table
-    return [float(h) for h in range(24)]
+    if time_mode == "24hr":
+        return [float(h) for h in range(24)]
+
+    # default:
+    # Typical Operating Hours
+    return [float(h) for h in range(8, 18)]
 
 
 def analysis_grid(room_width, room_depth, analysis_height=0.0, grid_size=0.25):
@@ -682,11 +689,12 @@ def analyze():
         hb_model, hb_debug = build_honeybee_model(data)
 
         shading_faces = generate_shading_faces(data)
-        time_mode = data.get("timeMode", "full_day")
+
+        time_mode = data.get("timeMode", "operating_hours")
         times = get_time_samples(time_mode)
 
         results = [analyze_single_time(data, t, shading_faces) for t in times]
-
+        
         valid = [r for r in results if r["sun_visible"]]
         if valid:
             best = max(valid, key=lambda r: r["sunlit_area_sqft"])

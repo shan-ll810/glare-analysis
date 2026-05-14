@@ -47,7 +47,7 @@ type SavedScenario = {
     latitude: number;
     orientationDeg: number;
     analysisDate: "03-21" | "06-21" | "09-21" | "12-21";
-    timeMode: "full_day" | "9" | "12" | "15";
+    timeMode: "operating_hours" | "24hr" | "9" | "12" | "15";
     hasShading: boolean;
     shadingType: "horizontal" | "vertical" | "eggcrate";
     horizontalCount: number;
@@ -625,7 +625,7 @@ function ScenarioLineChart({
               textAnchor="middle"
               fill="#64748b"
             >
-              {`${hour}:00`}
+              `${hour.toString().padStart(2,"0")}:00`
             </text>
           </g>
         );
@@ -939,9 +939,9 @@ export default function Page() {
   const [analysisDate, setAnalysisDate] = useState<
     "03-21" | "06-21" | "09-21" | "12-21"
   >("06-21");
-  const [timeMode, setTimeMode] = useState<"full_day" | "9" | "12" | "15">(
-    "full_day"
-  );
+ const [timeMode, setTimeMode] = useState<
+  "operating_hours" | "24hr" | "9" | "12" | "15"
+>("operating_hours");
 
   const [hasShading, setHasShading] = useState(true);
   const [shadingType, setShadingType] = useState<
@@ -1745,7 +1745,7 @@ useEffect(() => {
   const patchShapes: React.ReactNode[] = [];
   const penetrationGraphics: React.ReactNode[] = [];
 
-  if (timeMode === "full_day" && daylightHours.length > 0) {
+  if ((timeMode === "operating_hours" || timeMode === "24hr") && daylightHours.length > 0) {
     const total = daylightHours.length;
 
     daylightHours.forEach((item, idx) => {
@@ -2032,7 +2032,7 @@ useEffect(() => {
     ].sort((a, b) => a.d - b.d);
 
     const patch =
-      timeMode === "full_day"
+     timeMode === "operating_hours" || timeMode === "24hr"
         ? null
         : computeSunPatchAtHour(displayHour, hasShading);
 
@@ -2097,7 +2097,7 @@ useEffect(() => {
     }
 
     const allDayFloorPatches3D: React.ReactNode[] = [];
-    if (timeMode === "full_day" && daylightHours.length > 0) {
+    if ((timeMode === "operating_hours" || timeMode === "24hr") && daylightHours.length > 0) {
       const total = daylightHours.length;
 
       daylightHours.forEach((item, idx) => {
@@ -2352,7 +2352,7 @@ useEffect(() => {
           strokeWidth={analysisDate === "12-21" ? "2.4" : "1.8"}
         />
 
-        {timeMode !== "full_day" && (
+        {timeMode === "operating_hours" || timeMode === "24hr" && (
           <circle cx={sunPt.x} cy={sunPt.y} r="3.5" fill="#111111" />
         )}
 
@@ -2388,7 +2388,9 @@ useEffect(() => {
         </text>
 
         <text x="16" y="22" fontSize="12" fill="#334155">
-          3D preview · {timeMode === "full_day" ? "all day overlay" : `${displayHour}:00`}
+          3D preview · {timeMode === "operating_hours" || timeMode === "24hr"
+            ? "all day overlay"
+            : `${displayHour}:00`}
         </text>
       </svg>
     );
@@ -2740,12 +2742,13 @@ if (!currentUser) {
                           value={timeMode}
                           onChange={(e) =>
                             setTimeMode(
-                              e.target.value as "full_day" | "9" | "12" | "15"
+                              e.target.value as "operating_hours" | "24hr" | "9" | "12" | "15"
                             )
                           }
                           className="w-full rounded-xl border border-slate-300 bg-white px-3 py-2"
                         >
-                          <option value="full_day">All Day</option>
+                          <option value="operating_hours">Operating Hours (08:00–17:00)</option>
+                          <option value="24hr">24 Hour</option>
                           <option value="9">9:00</option>
                           <option value="12">12:00</option>
                           <option value="15">15:00</option>
@@ -3160,9 +3163,13 @@ if (!currentUser) {
                               <div>
                                 <div className="text-slate-500">Time</div>
                                 <div className="font-medium">
-                                  {scenario.inputs.timeMode === "full_day"
-                                    ? "All Day"
-                                    : `${scenario.inputs.timeMode}:00`}
+                                  {
+                                    scenario.inputs.timeMode === "operating_hours"
+                                      ? "08:00–17:00"
+                                      : scenario.inputs.timeMode === "24hr"
+                                      ? "24 Hour"
+                                      : `${scenario.inputs.timeMode}:00`
+                                  }
                                 </div>
                               </div>
                               <div>
@@ -3353,7 +3360,7 @@ if (!currentUser) {
                                   {scenario.inputs.analysisDate}
                                 </td>
                                 <td className="px-4 py-3">
-                                  {scenario.inputs.timeMode === "full_day"
+                                  {scenario.inputs.timeMode === "operating_hours" || timeMode === "24hr"
                                     ? "All Day"
                                     : `${scenario.inputs.timeMode}:00`}
                                 </td>
