@@ -2727,10 +2727,10 @@ if (!currentUser) {
                           }
                           className="w-full rounded-xl border border-slate-300 bg-white px-3 py-2"
                         >
-                          <option value="03-21">Spring Equinox</option>
-                          <option value="06-21">Summer Solstice</option>
-                          <option value="09-21">Autumn Equinox</option>
-                          <option value="12-21">Winter Solstice</option>
+                          <option value="06-21">Summer Solstice (06-21)</option>
+                          <option value="03-21">Spring Equinox (03-21)</option>
+                          <option value="09-21">Autumn Equinox (09-21)</option>
+                          <option value="12-21">Winter Solstice (12-21)</option>
                         </select>
                       </label>
 

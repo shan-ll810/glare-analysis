@@ -454,7 +454,9 @@ def get_time_samples(time_mode: str):
         return [12.0]
     if time_mode == "15":
         return [15.0]
-    return [8.0, 9.0, 10.0, 11.0, 12.0, 13.0, 14.0, 15.0, 16.0]
+
+    # full_day: 24-hour analysis, matching GH validation table
+    return [float(h) for h in range(24)]
 
 
 def analysis_grid(room_width, room_depth, analysis_height=0.0, grid_size=0.25):
